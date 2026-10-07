@@ -1,0 +1,13 @@
+# Runs on its own port, independent of every other stack on the host.
+services:
+  ci-console:
+    build: .
+    image: ci-console:latest
+    container_name: ci-console
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    env_file: .env
+    volumes:
+      # Archived builds and console.config.json; owned by uid 1000 (node).
+      - ./data:/data

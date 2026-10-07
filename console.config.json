@@ -1,0 +1,6 @@
+{
+  "apps": [
+    { "name": "CoolKa", "repo": "hkn-mobile/ac_remote_control" },
+    { "name": "Grebat", "repo": "hkn-mobile/grebat" }
+  ]
+}

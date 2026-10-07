@@ -96,7 +96,7 @@ async function BuildRow({ build, appName, origin }: { build: BuildMeta; appName:
             <summary className={`${ghostButton} cursor-pointer list-none py-1.5`}>QR</summary>
             <div className="absolute right-0 z-10 mt-2 rounded-lg border border-line bg-white p-2 shadow-lg">
               <div className="size-[168px]" dangerouslySetInnerHTML={{ __html: qr }} />
-              <p className="mt-1 max-w-[168px] text-center text-[10px] text-zinc-600">Quét bằng điện thoại trong mạng công ty để cài APK</p>
+              <p className="mt-1 max-w-[168px] text-center text-[10px] text-zinc-600">Quét bằng điện thoại trong mạng công ty để cài APK, không cần mật khẩu</p>
             </div>
           </details>
         )}

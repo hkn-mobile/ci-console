@@ -2,12 +2,14 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { NextRequest } from "next/server";
-import { isAuthorized } from "@/lib/auth";
+import { isPrivateAddress } from "@/lib/auth";
 import { readBuild, resolveBuildFile } from "@/lib/archive";
 
-/** Streams an archived APK or AAB under a readable file name. */
+/** Streams an archived APK or AAB under a readable file name; open to the company network, no password. */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ key: string; run: string; name: string }> }) {
-  if (!isAuthorized(request.headers.get("authorization"))) return new Response("Unauthorized", { status: 401 });
+  if (!isPrivateAddress(request.headers.get("x-forwarded-for"))) {
+    return new Response("Chỉ tải được trong mạng nội bộ công ty", { status: 403 });
+  }
 
   const { key, run, name } = await params;
   const file = await resolveBuildFile(key, run, name);

@@ -20,6 +20,13 @@ export const SECRETS: SecretSpec[] = [
     help: "Khoá private của deploy key (vd. cho net_kit). Dán cả dòng BEGIN và END.",
   },
   {
+    name: "APP_CONFIG_FILES",
+    label: "File cấu hình (lib/config)",
+    kind: "multiline",
+    shared: false,
+    help: "File cấu hình ngoài git, dạng base64 của tar.gz. Tạo ở thư mục gốc của app: tar czf - lib/config | base64 | tr -d '\\n' | pbcopy",
+  },
+  {
     name: "ANDROID_KEYSTORE_BASE64",
     label: "Keystore (.jks)",
     kind: "file-base64",

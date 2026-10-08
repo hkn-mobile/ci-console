@@ -29,7 +29,7 @@ export default async function Home() {
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="App" value={apps.length} note={apps.length - reachable.length ? `${apps.length - reachable.length} không đọc được` : "đều đọc được"} />
         <Stat label="Secret đã có" value={`${present}/${total}`} note={total - present ? `${total - present} còn thiếu` : "không thiếu gì"} tone={total - present ? "warn" : "ok"} />
-        <Stat label="App sẵn sàng phát hành" value={`${complete}/${apps.length}`} note="đủ cả 6 secret" tone={complete === apps.length ? "ok" : "neutral"} />
+        <Stat label="App sẵn sàng phát hành" value={`${complete}/${apps.length}`} note={`đủ cả ${SECRETS.length} secret`} tone={complete === apps.length ? "ok" : "neutral"} />
       </div>
 
       <div className={`${cardClass} overflow-x-auto`}>

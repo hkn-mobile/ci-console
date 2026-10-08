@@ -7,7 +7,7 @@ import { GitHubError } from "@/lib/github";
 import { formatDate } from "@/lib/status";
 import { PageHeader } from "@/components/PageHeader";
 import { cardClass, ghostButton } from "@/components/ui";
-import { AddEntryForm, EntryRow, ImportForm } from "./ConfigForms";
+import { AddEntryForm, EntryRow, ImportForm, QuickImportButton } from "./ConfigForms";
 
 export default async function ConfigPage({ searchParams }: { searchParams: Promise<{ app?: string }> }) {
   await connection();
@@ -67,15 +67,20 @@ export default async function ConfigPage({ searchParams }: { searchParams: Promi
                   )}
                 </p>
               </div>
-              {!error && entries.length > 0 && (
-                <a href={`/config/download?app=${encodeURIComponent(app.repo)}`} className={ghostButton} title="Dòng bí mật để trống, điền tay">
-                  Tải app.json
-                </a>
+              {!error && (
+                <div className="flex items-start gap-2">
+                  <QuickImportButton repo={app.repo} />
+                  {entries.length > 0 && (
+                    <a href={`/config/download?app=${encodeURIComponent(app.repo)}`} className={ghostButton} title="Dòng bí mật để trống, điền tay">
+                      Tải app.json
+                    </a>
+                  )}
+                </div>
               )}
             </header>
             {!error &&
               (entries.length === 0 ? (
-                <p className="px-5 py-6 text-sm text-fg-muted">Chưa có dòng nào. Thêm từng dòng bên dưới hoặc nhập cả file app.json.</p>
+                <p className="px-5 py-6 text-sm text-fg-muted">Chưa có dòng nào. Bấm Nhập app.json ở trên, hoặc thêm từng dòng bên dưới.</p>
               ) : (
                 <ul>
                   {entries.map((entry) => (

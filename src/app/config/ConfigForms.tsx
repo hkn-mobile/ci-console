@@ -3,11 +3,11 @@
 import { useActionState, useRef, useState } from "react";
 import type { ActionState } from "@/app/actions";
 import { deleteConfigEntryAction, importConfigAction, saveConfigEntryAction } from "@/app/config-actions";
-import { looksSecret, type ConfigEntry } from "@/lib/app-config";
+import type { ConfigEntry } from "@/lib/app-config";
 import { ActionResult } from "@/components/ActionResult";
 import { Badge } from "@/components/Badge";
 import { FormSection } from "@/components/FormSection";
-import { cardClass, fileClass, ghostButton, hintClass, inputClass, labelClass, primaryButton } from "@/components/ui";
+import { cardClass, ghostButton, hintClass, inputClass, labelClass, primaryButton } from "@/components/ui";
 
 const initialState: ActionState = {};
 
@@ -108,15 +108,13 @@ export function EntryRow({ repo, entry, updatedAt }: { repo: string; entry: Conf
 export function AddEntryForm({ repo }: { repo: string }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [key, setKey] = useState("");
-  // Follows the key's name until the user ticks or unticks the box themselves.
-  const [secretOverride, setSecretOverride] = useState<boolean | null>(null);
-  const secret = secretOverride ?? looksSecret(key);
+  const [secret, setSecret] = useState(false);
   const [state, formAction, pending] = useActionState(async (prev: ActionState, formData: FormData) => {
     const result = await saveConfigEntryAction(prev, formData);
     if (!result.error) {
       formRef.current?.reset();
       setKey("");
-      setSecretOverride(null);
+      setSecret(false);
     }
     return result;
   }, initialState);
@@ -144,7 +142,7 @@ export function AddEntryForm({ repo }: { repo: string }) {
             <textarea name="value" rows={1} required spellCheck={false} autoComplete="off" className={`${inputClass} font-mono text-xs`} />
           </label>
         </div>
-        <SecretToggle checked={secret} onChange={setSecretOverride} />
+        <SecretToggle checked={secret} onChange={setSecret} />
       </FormSection>
       <div className="flex flex-col gap-3 p-5">
         <div>
@@ -164,7 +162,7 @@ export function ImportForm({ repo }: { repo: string }) {
   return (
     <details className={`${cardClass} group`}>
       <summary className="flex cursor-pointer list-none items-center justify-between p-5 text-sm font-medium">
-        Nhập cả file app.json
+        Dán nội dung app.json
         <span className="text-fg-faint transition group-open:rotate-180" aria-hidden="true">
           ⌄
         </span>
@@ -172,8 +170,7 @@ export function ImportForm({ repo }: { repo: string }) {
       <form action={formAction} className="space-y-4 border-t border-line p-5">
         <input type="hidden" name="repo" value={repo} />
         <p className={hintClass}>
-          Mỗi key trong file thành một dòng, trùng tên thì ghi đè; dòng nào không có trong file thì giữ nguyên. Key có chứa API_KEY, SECRET,
-          TOKEN, PASSWORD hoặc PRIVATE được lưu là bí mật, còn lại là thường.
+          Mỗi key thành một dòng Thường, trùng tên thì ghi đè; dòng nào không có trong nội dung thì giữ nguyên.
         </p>
         <label className="block space-y-1.5">
           <span className={labelClass}>Dán nội dung</span>
@@ -186,15 +183,46 @@ export function ImportForm({ repo }: { repo: string }) {
             className={`${inputClass} font-mono text-xs leading-relaxed`}
           />
         </label>
-        <label className="block space-y-1.5">
-          <span className={hintClass}>hoặc chọn file</span>
-          <input type="file" name="file" accept=".json,application/json" className={fileClass} />
-        </label>
         <button type="submit" disabled={pending} className={primaryButton}>
           {pending ? "Đang gửi lên GitHub…" : "Nhập vào app"}
         </button>
         <ActionResult state={state} />
       </form>
     </details>
+  );
+}
+
+/** Header button: pick an app.json and it is imported straight away. */
+export function QuickImportButton({ repo }: { repo: string }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  const [state, formAction, pending] = useActionState(async (prev: ActionState, formData: FormData) => {
+    const result = await importConfigAction(prev, formData);
+    formRef.current?.reset();
+    return result;
+  }, initialState);
+  const failed = state.results?.filter((r) => !r.ok) ?? [];
+
+  return (
+    <form ref={formRef} action={formAction} className="flex flex-col items-end gap-1">
+      <input type="hidden" name="repo" value={repo} />
+      <label className={`${ghostButton} cursor-pointer ${pending ? "pointer-events-none opacity-60" : ""}`}>
+        {pending ? "Đang nhập…" : "Nhập app.json"}
+        <input
+          type="file"
+          name="file"
+          accept=".json,application/json"
+          className="sr-only"
+          onChange={(e) => e.currentTarget.files?.length && formRef.current?.requestSubmit()}
+        />
+      </label>
+      {state.error && <span role="alert" className="text-xs text-bad">{state.error}</span>}
+      {state.results && (
+        <span role="status" className={`text-xs ${failed.length ? "text-bad" : "text-ok"}`}>
+          {failed.length
+            ? `Lỗi ${failed.length}/${state.results.length}: ${failed.map((r) => `${r.name} (${r.message})`).join(", ")}`
+            : `Đã nhập ${state.results.length} dòng`}
+        </span>
+      )}
+    </form>
   );
 }

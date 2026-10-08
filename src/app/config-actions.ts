@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { isAuthorized } from "@/lib/auth";
-import { CONFIG_KEY_PATTERN, CONFIG_PREFIX, looksSecret, MAX_VARIABLE_BYTES } from "@/lib/app-config";
+import { CONFIG_KEY_PATTERN, CONFIG_PREFIX, MAX_VARIABLE_BYTES } from "@/lib/app-config";
 import { loadApps } from "@/lib/config";
 import { getStore, GitHubError, type SecretStore } from "@/lib/github";
 import type { ActionState, RepoResult } from "./actions";
@@ -125,11 +125,12 @@ export async function importConfigAction(_prev: ActionState, formData: FormData)
 
     const store = getStore();
     const results: RepoResult[] = [];
+    // Imported keys are plain variables: the values ship inside the app anyway,
+    // and only variables come back in the downloaded app.json.
     for (const [key, value] of entries) {
-      const secret = looksSecret(key);
       try {
-        await writeEntry(store, repo, key, value, secret);
-        results.push({ repo, name: key, ok: true, message: secret ? "Bí mật" : "Thường" });
+        await writeEntry(store, repo, key, value, false);
+        results.push({ repo, name: key, ok: true, message: "Đã lưu" });
       } catch (error) {
         results.push({ repo, name: key, ok: false, message: messageOf(error) });
       }

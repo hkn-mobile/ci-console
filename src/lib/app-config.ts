@@ -19,8 +19,3 @@ export type ConfigEntry = {
   value?: string;
   updatedAt: string;
 };
-
-/** Keys that look like credentials start out as secrets on the forms and in imports. */
-export function looksSecret(key: string): boolean {
-  return /(API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE)/.test(key);
-}

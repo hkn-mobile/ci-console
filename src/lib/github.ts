@@ -2,6 +2,9 @@ import { sealForGitHub } from "./seal";
 
 export type SecretInfo = { name: string; updatedAt: string };
 
+/** A repository variable; unlike a secret, its value can be read back. */
+export type VariableInfo = { name: string; value: string; updatedAt: string };
+
 export type RepoInfo = { repo: string; private: boolean };
 
 export type RunStatus = "queued" | "in_progress" | "completed" | "waiting" | "requested" | "pending";
@@ -33,13 +36,17 @@ export type ArtifactInfo = { id: number; name: string; size: number; expired: bo
 export type ReleaseInputs = { upload: boolean; versionCode: string; versionName: string };
 
 /** Which grant a failed call needed, so the error names the missing permission. */
-type Scope = "Secrets" | "Actions" | "Metadata";
+type Scope = "Secrets" | "Variables" | "Actions" | "Metadata";
 
 /** What the console needs from GitHub; secret values can be written but never read back. */
 export interface SecretStore {
   listSecrets(repo: string): Promise<SecretInfo[]>;
   setSecret(repo: string, name: string, value: string): Promise<void>;
   deleteSecret(repo: string, name: string): Promise<void>;
+  listVariables(repo: string): Promise<VariableInfo[]>;
+  /** Creates the variable, or overwrites it when it already exists. */
+  setVariable(repo: string, name: string, value: string): Promise<void>;
+  deleteVariable(repo: string, name: string): Promise<void>;
   /** Repos the token can reach, whether or not it may write their secrets. */
   listRepos(): Promise<RepoInfo[]>;
   /** True when the token may read (and so, with a write grant, set) the repo's secrets. */
@@ -104,6 +111,31 @@ class GitHubSecretStore implements SecretStore {
 
   async deleteSecret(repo: string, name: string): Promise<void> {
     await this.request("DELETE", `/repos/${repo}/actions/secrets/${name}`, "Secrets");
+  }
+
+  async listVariables(repo: string): Promise<VariableInfo[]> {
+    const variables: VariableInfo[] = [];
+    // GitHub caps this endpoint at 30 per page.
+    for (let page = 1; page <= 20; page++) {
+      const response = await this.request("GET", `/repos/${repo}/actions/variables?per_page=30&page=${page}`, "Variables");
+      const data = (await response.json()) as { total_count: number; variables: { name: string; value: string; updated_at: string }[] };
+      variables.push(...data.variables.map((v) => ({ name: v.name, value: v.value, updatedAt: v.updated_at })));
+      if (variables.length >= data.total_count || data.variables.length === 0) break;
+    }
+    return variables;
+  }
+
+  async setVariable(repo: string, name: string, value: string): Promise<void> {
+    try {
+      await this.request("POST", `/repos/${repo}/actions/variables`, "Variables", { name, value });
+    } catch (error) {
+      if (!(error instanceof GitHubError && error.status === 409)) throw error;
+      await this.request("PATCH", `/repos/${repo}/actions/variables/${name}`, "Variables", { name, value });
+    }
+  }
+
+  async deleteVariable(repo: string, name: string): Promise<void> {
+    await this.request("DELETE", `/repos/${repo}/actions/variables/${name}`, "Variables");
   }
 
   async listRepos(): Promise<RepoInfo[]> {
@@ -223,6 +255,7 @@ class GitHubSecretStore implements SecretStore {
 /** Keeps secrets and fake runs in memory so the UI can be tried without a token. */
 class DemoSecretStore implements SecretStore {
   private static secrets = new Map<string, Map<string, string>>();
+  private static variables = new Map<string, Map<string, VariableInfo>>();
   private static runs = new Map<string, { id: number; createdAt: number; upload: boolean; branch: string }[]>();
 
   async listSecrets(repo: string): Promise<SecretInfo[]> {
@@ -238,6 +271,20 @@ class DemoSecretStore implements SecretStore {
 
   async deleteSecret(repo: string, name: string): Promise<void> {
     DemoSecretStore.secrets.get(repo)?.delete(name);
+  }
+
+  async listVariables(repo: string): Promise<VariableInfo[]> {
+    return [...(DemoSecretStore.variables.get(repo)?.values() ?? [])];
+  }
+
+  async setVariable(repo: string, name: string, value: string): Promise<void> {
+    const repoVariables = DemoSecretStore.variables.get(repo) ?? new Map<string, VariableInfo>();
+    repoVariables.set(name, { name, value, updatedAt: new Date().toISOString() });
+    DemoSecretStore.variables.set(repo, repoVariables);
+  }
+
+  async deleteVariable(repo: string, name: string): Promise<void> {
+    DemoSecretStore.variables.get(repo)?.delete(name);
   }
 
   async listRepos(): Promise<RepoInfo[]> {

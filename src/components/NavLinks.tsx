@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const LINKS = [
   { href: "/", label: "Tổng quan" },
+  { href: "/config", label: "Config" },
   { href: "/keystore", label: "Bộ keystore" },
   { href: "/releases", label: "Phát hành & lần chạy" },
   { href: "/builds", label: "Bản build" },

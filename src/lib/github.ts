@@ -75,6 +75,28 @@ export class GitHubError extends Error {
 
 const API = "https://api.github.com";
 
+const SECOND = 1000;
+const MINUTE = 60 * SECOND;
+
+/**
+ * Recent GitHub reads shared by every request in this server process, so
+ * switching pages does not refetch slow-changing data. Writes made through the
+ * console clear it; changes made directly on GitHub show up once an entry expires.
+ */
+const readCache = new Map<string, { expires: number; value: Promise<unknown> }>();
+
+function cached<T>(key: string, ttlMs: number, load: () => Promise<T>): Promise<T> {
+  const hit = readCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.value as Promise<T>;
+  const entry = { expires: Date.now() + ttlMs, value: load() };
+  readCache.set(key, entry);
+  // A failed call is not remembered, so the next page load tries again.
+  entry.value.catch(() => {
+    if (readCache.get(key) === entry) readCache.delete(key);
+  });
+  return entry.value;
+}
+
 class GitHubSecretStore implements SecretStore {
   constructor(private readonly token: string) {}
 
@@ -90,6 +112,8 @@ class GitHubSecretStore implements SecretStore {
       },
       body: body ? JSON.stringify(body) : undefined,
     });
+    // Any write may change what the cached reads would return.
+    if (method !== "GET") readCache.clear();
     if (!response.ok) {
       throw new GitHubError(describe(response.status, scope), response.status);
     }
@@ -97,9 +121,11 @@ class GitHubSecretStore implements SecretStore {
   }
 
   async listSecrets(repo: string): Promise<SecretInfo[]> {
-    const response = await this.request("GET", `/repos/${repo}/actions/secrets?per_page=100`, "Secrets");
-    const data = (await response.json()) as { secrets: { name: string; updated_at: string }[] };
-    return data.secrets.map((s) => ({ name: s.name, updatedAt: s.updated_at }));
+    return cached(`secrets:${repo}`, 30 * SECOND, async () => {
+      const response = await this.request("GET", `/repos/${repo}/actions/secrets?per_page=100`, "Secrets");
+      const data = (await response.json()) as { secrets: { name: string; updated_at: string }[] };
+      return data.secrets.map((s) => ({ name: s.name, updatedAt: s.updated_at }));
+    });
   }
 
   async setSecret(repo: string, name: string, value: string): Promise<void> {
@@ -114,15 +140,17 @@ class GitHubSecretStore implements SecretStore {
   }
 
   async listVariables(repo: string): Promise<VariableInfo[]> {
-    const variables: VariableInfo[] = [];
-    // GitHub caps this endpoint at 30 per page.
-    for (let page = 1; page <= 20; page++) {
-      const response = await this.request("GET", `/repos/${repo}/actions/variables?per_page=30&page=${page}`, "Variables");
-      const data = (await response.json()) as { total_count: number; variables: { name: string; value: string; updated_at: string }[] };
-      variables.push(...data.variables.map((v) => ({ name: v.name, value: v.value, updatedAt: v.updated_at })));
-      if (variables.length >= data.total_count || data.variables.length === 0) break;
-    }
-    return variables;
+    return cached(`variables:${repo}`, 30 * SECOND, async () => {
+      const variables: VariableInfo[] = [];
+      // GitHub caps this endpoint at 30 per page.
+      for (let page = 1; page <= 20; page++) {
+        const response = await this.request("GET", `/repos/${repo}/actions/variables?per_page=30&page=${page}`, "Variables");
+        const data = (await response.json()) as { total_count: number; variables: { name: string; value: string; updated_at: string }[] };
+        variables.push(...data.variables.map((v) => ({ name: v.name, value: v.value, updatedAt: v.updated_at })));
+        if (variables.length >= data.total_count || data.variables.length === 0) break;
+      }
+      return variables;
+    });
   }
 
   async setVariable(repo: string, name: string, value: string): Promise<void> {
@@ -139,71 +167,81 @@ class GitHubSecretStore implements SecretStore {
   }
 
   async listRepos(): Promise<RepoInfo[]> {
-    const repos: RepoInfo[] = [];
-    for (let page = 1; page <= 10; page++) {
-      const response = await this.request("GET", `/user/repos?per_page=100&page=${page}&sort=full_name`, "Metadata");
-      const batch = (await response.json()) as { full_name: string; private: boolean }[];
-      repos.push(...batch.map((r) => ({ repo: r.full_name, private: r.private })));
-      if (batch.length < 100) break;
-    }
-    return repos;
+    return cached("repos", 5 * MINUTE, async () => {
+      const repos: RepoInfo[] = [];
+      for (let page = 1; page <= 10; page++) {
+        const response = await this.request("GET", `/user/repos?per_page=100&page=${page}&sort=full_name`, "Metadata");
+        const batch = (await response.json()) as { full_name: string; private: boolean }[];
+        repos.push(...batch.map((r) => ({ repo: r.full_name, private: r.private })));
+        if (batch.length < 100) break;
+      }
+      return repos;
+    });
   }
 
   async canManageSecrets(repo: string): Promise<boolean> {
-    try {
-      await this.request("GET", `/repos/${repo}/actions/secrets?per_page=1`, "Secrets");
-      return true;
-    } catch (error) {
-      if (error instanceof GitHubError && [403, 404].includes(error.status)) return false;
-      throw error;
-    }
+    return cached(`can-manage:${repo}`, 5 * MINUTE, async () => {
+      try {
+        await this.request("GET", `/repos/${repo}/actions/secrets?per_page=1`, "Secrets");
+        return true;
+      } catch (error) {
+        if (error instanceof GitHubError && [403, 404].includes(error.status)) return false;
+        throw error;
+      }
+    });
   }
 
   async defaultBranch(repo: string): Promise<string> {
-    const response = await this.request("GET", `/repos/${repo}`, "Metadata");
-    return ((await response.json()) as { default_branch: string }).default_branch;
+    return cached(`default-branch:${repo}`, 5 * MINUTE, async () => {
+      const response = await this.request("GET", `/repos/${repo}`, "Metadata");
+      return ((await response.json()) as { default_branch: string }).default_branch;
+    });
   }
 
   async hasWorkflow(repo: string, workflow: string): Promise<boolean> {
-    try {
-      await this.request("GET", `/repos/${repo}/actions/workflows/${workflow}`, "Actions");
-      return true;
-    } catch (error) {
-      if (error instanceof GitHubError && error.status === 404) return false;
-      throw error;
-    }
+    return cached(`workflow:${repo}:${workflow}`, 5 * MINUTE, async () => {
+      try {
+        await this.request("GET", `/repos/${repo}/actions/workflows/${workflow}`, "Actions");
+        return true;
+      } catch (error) {
+        if (error instanceof GitHubError && error.status === 404) return false;
+        throw error;
+      }
+    });
   }
 
   async listRuns(repo: string, workflow: string, limit: number): Promise<WorkflowRun[]> {
-    const response = await this.request("GET", `/repos/${repo}/actions/workflows/${workflow}/runs?per_page=${limit}`, "Actions");
-    const data = (await response.json()) as {
-      workflow_runs: {
-        id: number;
-        run_number: number;
-        status: RunStatus;
-        conclusion: string | null;
-        head_branch: string;
-        head_sha: string;
-        pull_requests?: { number: number }[];
-        actor?: { login: string };
-        created_at: string;
-        updated_at: string;
-        html_url: string;
-      }[];
-    };
-    return data.workflow_runs.map((r) => ({
-      id: r.id,
-      number: r.run_number,
-      status: r.status,
-      conclusion: r.conclusion,
-      branch: r.head_branch,
-      commit: r.head_sha,
-      prNumber: r.pull_requests?.[0]?.number ?? null,
-      actor: r.actor?.login ?? "",
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-      url: r.html_url,
-    }));
+    return cached(`runs:${repo}:${workflow}:${limit}`, 5 * SECOND, async () => {
+      const response = await this.request("GET", `/repos/${repo}/actions/workflows/${workflow}/runs?per_page=${limit}`, "Actions");
+      const data = (await response.json()) as {
+        workflow_runs: {
+          id: number;
+          run_number: number;
+          status: RunStatus;
+          conclusion: string | null;
+          head_branch: string;
+          head_sha: string;
+          pull_requests?: { number: number }[];
+          actor?: { login: string };
+          created_at: string;
+          updated_at: string;
+          html_url: string;
+        }[];
+      };
+      return data.workflow_runs.map((r) => ({
+        id: r.id,
+        number: r.run_number,
+        status: r.status,
+        conclusion: r.conclusion,
+        branch: r.head_branch,
+        commit: r.head_sha,
+        prNumber: r.pull_requests?.[0]?.number ?? null,
+        actor: r.actor?.login ?? "",
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+        url: r.html_url,
+      }));
+    });
   }
 
   async dispatchRelease(repo: string, workflow: string, ref: string, inputs: ReleaseInputs): Promise<void> {
@@ -230,19 +268,23 @@ class GitHubSecretStore implements SecretStore {
   }
 
   async listOrgRunners(org: string): Promise<RunnerInfo[]> {
-    const response = await this.request("GET", `/orgs/${org}/actions/runners?per_page=100`, "Metadata");
-    const data = (await response.json()) as {
-      runners: { name: string; status: "online" | "offline"; busy: boolean; labels: { name: string }[] }[];
-    };
-    return data.runners.map((r) => ({ name: r.name, status: r.status, busy: r.busy, labels: r.labels.map((l) => l.name) }));
+    return cached(`runners:${org}`, 5 * SECOND, async () => {
+      const response = await this.request("GET", `/orgs/${org}/actions/runners?per_page=100`, "Metadata");
+      const data = (await response.json()) as {
+        runners: { name: string; status: "online" | "offline"; busy: boolean; labels: { name: string }[] }[];
+      };
+      return data.runners.map((r) => ({ name: r.name, status: r.status, busy: r.busy, labels: r.labels.map((l) => l.name) }));
+    });
   }
 
   async listArtifacts(repo: string, runId: number): Promise<ArtifactInfo[]> {
-    const response = await this.request("GET", `/repos/${repo}/actions/runs/${runId}/artifacts?per_page=100`, "Actions");
-    const data = (await response.json()) as {
-      artifacts: { id: number; name: string; size_in_bytes: number; expired: boolean }[];
-    };
-    return data.artifacts.map((a) => ({ id: a.id, name: a.name, size: a.size_in_bytes, expired: a.expired }));
+    return cached(`artifacts:${repo}:${runId}`, 5 * MINUTE, async () => {
+      const response = await this.request("GET", `/repos/${repo}/actions/runs/${runId}/artifacts?per_page=100`, "Actions");
+      const data = (await response.json()) as {
+        artifacts: { id: number; name: string; size_in_bytes: number; expired: boolean }[];
+      };
+      return data.artifacts.map((a) => ({ id: a.id, name: a.name, size: a.size_in_bytes, expired: a.expired }));
+    });
   }
 
   async downloadArtifact(repo: string, artifactId: number): Promise<Uint8Array> {

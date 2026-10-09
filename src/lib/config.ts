@@ -5,6 +5,13 @@ export type AppEntry = {
   name: string;
   /** owner/repo on GitHub. */
   repo: string;
+  /**
+   * GitHub environment holding this app's secrets and CFG_ variables, for a
+   * repo with more than one app (each on its own branch). Unset = repo level.
+   */
+  environment?: string;
+  /** The app's main branch in such a repo: releases run there and runs are filtered by it. */
+  branch?: string;
 };
 
 export type ConsoleConfig = {
@@ -14,6 +21,23 @@ export type ConsoleConfig = {
 };
 
 export const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const NAME_PATTERN = /^[A-Za-z0-9_./-]{1,100}$/;
+
+/** What forms post to name an app: owner/repo, or owner/repo#environment. */
+export const APP_ID_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(#[A-Za-z0-9_.-]+)?$/;
+
+/**
+ * Stable id of an app. The GitHub store reads "owner/repo#environment" as that
+ * environment's secrets and variables, so secret and config calls take it as is.
+ */
+export function appId(app: Pick<AppEntry, "repo" | "environment">): string {
+  return app.environment ? `${app.repo}#${app.environment}` : app.repo;
+}
+
+/** True when a run or build on this branch belongs to the app; apps without a branch own every branch. */
+export function ownsBranch(app: Pick<AppEntry, "branch">, ...branches: (string | null | undefined)[]): boolean {
+  return !app.branch || branches.includes(app.branch);
+}
 
 const CONFIG_FILE = configFile;
 
@@ -27,7 +51,17 @@ export async function loadConfig(): Promise<ConsoleConfig> {
     if (typeof app.name !== "string" || typeof app.repo !== "string" || !REPO_PATTERN.test(app.repo)) {
       throw new Error(`console.config.json apps[${index}] needs a name and an owner/repo`);
     }
-    return { name: app.name, repo: app.repo };
+    for (const field of ["environment", "branch"] as const) {
+      if (app[field] !== undefined && (typeof app[field] !== "string" || !NAME_PATTERN.test(app[field]))) {
+        throw new Error(`console.config.json apps[${index}].${field} is not a valid name`);
+      }
+    }
+    return {
+      name: app.name,
+      repo: app.repo,
+      ...(app.environment ? { environment: app.environment } : {}),
+      ...(app.branch ? { branch: app.branch } : {}),
+    };
   });
   const ignored = Array.isArray(raw.ignored) ? raw.ignored.filter((r): r is string => typeof r === "string") : [];
   return { apps, ignored };

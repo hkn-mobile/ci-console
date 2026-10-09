@@ -19,6 +19,8 @@ export type WorkflowRun = {
   commit: string;
   /** Set when the run was triggered by a pull request. */
   prNumber: number | null;
+  /** Branch that pull request merges into. */
+  prBase: string | null;
   actor: string;
   createdAt: string;
   updatedAt: string;
@@ -38,7 +40,10 @@ export type ReleaseInputs = { upload: boolean; versionCode: string; versionName:
 /** Which grant a failed call needed, so the error names the missing permission. */
 type Scope = "Secrets" | "Variables" | "Actions" | "Metadata";
 
-/** What the console needs from GitHub; secret values can be written but never read back. */
+/**
+ * What the console needs from GitHub; secret values can be written but never read back.
+ * Secret and variable calls take a target: "owner/repo", or "owner/repo#environment".
+ */
 export interface SecretStore {
   listSecrets(repo: string): Promise<SecretInfo[]>;
   setSecret(repo: string, name: string, value: string): Promise<void>;
@@ -74,6 +79,17 @@ export class GitHubError extends Error {
 }
 
 const API = "https://api.github.com";
+
+/**
+ * Where a secret or variable lives. "owner/repo" is the repository level;
+ * "owner/repo#environment" is that environment, for a repo holding several apps.
+ */
+function scopePath(target: string, kind: "secrets" | "variables"): string {
+  const [repo, environment] = target.split("#");
+  return environment
+    ? `/repos/${repo}/environments/${encodeURIComponent(environment)}/${kind}`
+    : `/repos/${repo}/actions/${kind}`;
+}
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -120,31 +136,31 @@ class GitHubSecretStore implements SecretStore {
     return response;
   }
 
-  async listSecrets(repo: string): Promise<SecretInfo[]> {
-    return cached(`secrets:${repo}`, 30 * SECOND, async () => {
-      const response = await this.request("GET", `/repos/${repo}/actions/secrets?per_page=100`, "Secrets");
+  async listSecrets(target: string): Promise<SecretInfo[]> {
+    return cached(`secrets:${target}`, 30 * SECOND, async () => {
+      const response = await this.request("GET", `${scopePath(target, "secrets")}?per_page=100`, "Secrets");
       const data = (await response.json()) as { secrets: { name: string; updated_at: string }[] };
       return data.secrets.map((s) => ({ name: s.name, updatedAt: s.updated_at }));
     });
   }
 
-  async setSecret(repo: string, name: string, value: string): Promise<void> {
-    const keyResponse = await this.request("GET", `/repos/${repo}/actions/secrets/public-key`, "Secrets");
+  async setSecret(target: string, name: string, value: string): Promise<void> {
+    const keyResponse = await this.request("GET", `${scopePath(target, "secrets")}/public-key`, "Secrets");
     const { key, key_id } = (await keyResponse.json()) as { key: string; key_id: string };
     const encrypted_value = await sealForGitHub(value, key);
-    await this.request("PUT", `/repos/${repo}/actions/secrets/${name}`, "Secrets", { encrypted_value, key_id });
+    await this.request("PUT", `${scopePath(target, "secrets")}/${name}`, "Secrets", { encrypted_value, key_id });
   }
 
-  async deleteSecret(repo: string, name: string): Promise<void> {
-    await this.request("DELETE", `/repos/${repo}/actions/secrets/${name}`, "Secrets");
+  async deleteSecret(target: string, name: string): Promise<void> {
+    await this.request("DELETE", `${scopePath(target, "secrets")}/${name}`, "Secrets");
   }
 
-  async listVariables(repo: string): Promise<VariableInfo[]> {
-    return cached(`variables:${repo}`, 30 * SECOND, async () => {
+  async listVariables(target: string): Promise<VariableInfo[]> {
+    return cached(`variables:${target}`, 30 * SECOND, async () => {
       const variables: VariableInfo[] = [];
       // GitHub caps this endpoint at 30 per page.
       for (let page = 1; page <= 20; page++) {
-        const response = await this.request("GET", `/repos/${repo}/actions/variables?per_page=30&page=${page}`, "Variables");
+        const response = await this.request("GET", `${scopePath(target, "variables")}?per_page=30&page=${page}`, "Variables");
         const data = (await response.json()) as { total_count: number; variables: { name: string; value: string; updated_at: string }[] };
         variables.push(...data.variables.map((v) => ({ name: v.name, value: v.value, updatedAt: v.updated_at })));
         if (variables.length >= data.total_count || data.variables.length === 0) break;
@@ -153,17 +169,17 @@ class GitHubSecretStore implements SecretStore {
     });
   }
 
-  async setVariable(repo: string, name: string, value: string): Promise<void> {
+  async setVariable(target: string, name: string, value: string): Promise<void> {
     try {
-      await this.request("POST", `/repos/${repo}/actions/variables`, "Variables", { name, value });
+      await this.request("POST", scopePath(target, "variables"), "Variables", { name, value });
     } catch (error) {
       if (!(error instanceof GitHubError && error.status === 409)) throw error;
-      await this.request("PATCH", `/repos/${repo}/actions/variables/${name}`, "Variables", { name, value });
+      await this.request("PATCH", `${scopePath(target, "variables")}/${name}`, "Variables", { name, value });
     }
   }
 
-  async deleteVariable(repo: string, name: string): Promise<void> {
-    await this.request("DELETE", `/repos/${repo}/actions/variables/${name}`, "Variables");
+  async deleteVariable(target: string, name: string): Promise<void> {
+    await this.request("DELETE", `${scopePath(target, "variables")}/${name}`, "Variables");
   }
 
   async listRepos(): Promise<RepoInfo[]> {
@@ -221,7 +237,7 @@ class GitHubSecretStore implements SecretStore {
           conclusion: string | null;
           head_branch: string;
           head_sha: string;
-          pull_requests?: { number: number }[];
+          pull_requests?: { number: number; base?: { ref: string } }[];
           actor?: { login: string };
           created_at: string;
           updated_at: string;
@@ -236,6 +252,7 @@ class GitHubSecretStore implements SecretStore {
         branch: r.head_branch,
         commit: r.head_sha,
         prNumber: r.pull_requests?.[0]?.number ?? null,
+        prBase: r.pull_requests?.[0]?.base?.ref ?? null,
         actor: r.actor?.login ?? "",
         createdAt: r.created_at,
         updatedAt: r.updated_at,
@@ -370,6 +387,7 @@ class DemoSecretStore implements SecretStore {
           branch: run.branch,
           commit: "0123456789abcdef0123456789abcdef01234567",
           prNumber: null,
+          prBase: null,
           actor: "demo",
           createdAt: new Date(run.createdAt).toISOString(),
           updatedAt: new Date(now).toISOString(),

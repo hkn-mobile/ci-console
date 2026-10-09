@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { isAuthorized } from "@/lib/auth";
-import { defaultAppName, loadConfig, REPO_PATTERN, saveConfig } from "@/lib/config";
+import { APP_ID_PATTERN, appId, defaultAppName, loadConfig, REPO_PATTERN, saveConfig } from "@/lib/config";
 import { getStore, GitHubError } from "@/lib/github";
 
 export type ListState = { error?: string; done?: string };
@@ -15,6 +15,12 @@ async function requireAuth() {
 function repoFrom(formData: FormData): string | null {
   const repo = String(formData.get("repo") ?? "").trim();
   return REPO_PATTERN.test(repo) ? repo : null;
+}
+
+/** An app's id (repo, or repo#environment) posted by the remove and rename forms. */
+function idFrom(formData: FormData): string | null {
+  const id = String(formData.get("repo") ?? "").trim();
+  return APP_ID_PATTERN.test(id) ? id : null;
 }
 
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
@@ -48,12 +54,12 @@ export async function addAppAction(_prev: ListState, formData: FormData): Promis
 /** Drops an app from the console only; nothing changes on GitHub. */
 export async function removeAppAction(_prev: ListState, formData: FormData): Promise<ListState> {
   await requireAuth();
-  const repo = repoFrom(formData);
-  if (!repo) return { error: "Repo không hợp lệ" };
+  const id = idFrom(formData);
+  if (!id) return { error: "Repo không hợp lệ" };
 
   const config = await loadConfig();
   const before = config.apps.length;
-  config.apps = config.apps.filter((a) => !same(a.repo, repo));
+  config.apps = config.apps.filter((a) => !same(appId(a), id));
   if (config.apps.length === before) return { error: "Repo không có trong danh sách" };
   await saveConfig(config);
   revalidatePath("/");
@@ -87,14 +93,14 @@ export async function unignoreRepoAction(_prev: ListState, formData: FormData): 
 /** Changes an app's display name; the repo and its secrets stay as they are. */
 export async function renameAppAction(_prev: ListState, formData: FormData): Promise<ListState> {
   await requireAuth();
-  const repo = repoFrom(formData);
-  if (!repo) return { error: "Repo không hợp lệ" };
+  const id = idFrom(formData);
+  if (!id) return { error: "Repo không hợp lệ" };
 
   const name = String(formData.get("name") ?? "").trim().slice(0, 60);
   if (!name) return { error: "Tên không được để trống" };
 
   const config = await loadConfig();
-  const app = config.apps.find((a) => same(a.repo, repo));
+  const app = config.apps.find((a) => same(appId(a), id));
   if (!app) return { error: "Repo không có trong danh sách" };
 
   app.name = name;

@@ -17,7 +17,7 @@ export default async function SecretPage({ params }: { params: Promise<{ name: s
     const info = app.secrets.get(spec.name);
     return {
       name: app.name,
-      repo: app.repo,
+      repo: app.id,
       has: Boolean(info),
       updatedAt: info ? formatDate(info.updatedAt) : undefined,
       error: app.error ?? error,

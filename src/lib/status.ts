@@ -1,7 +1,9 @@
-import { loadApps, type AppEntry } from "./config";
+import { appId, loadApps, type AppEntry } from "./config";
 import { getStore, GitHubError, type SecretInfo } from "./github";
 
 export type AppStatus = AppEntry & {
+  /** appId(): the repo, or repo#environment. */
+  id: string;
   secrets: Map<string, SecretInfo>;
   error?: string;
 };
@@ -14,17 +16,17 @@ export async function loadStatus(): Promise<{ apps: AppStatus[]; error?: string 
     store = getStore();
   } catch (error) {
     const message = error instanceof GitHubError ? error.message : "Không tạo được kết nối GitHub";
-    return { apps: apps.map((a) => ({ ...a, secrets: new Map() })), error: message };
+    return { apps: apps.map((a) => ({ ...a, id: appId(a), secrets: new Map() })), error: message };
   }
 
   const statuses = await Promise.all(
     apps.map(async (app): Promise<AppStatus> => {
       try {
-        const secrets = await store.listSecrets(app.repo);
-        return { ...app, secrets: new Map(secrets.map((s) => [s.name, s])) };
+        const secrets = await store.listSecrets(appId(app));
+        return { ...app, id: appId(app), secrets: new Map(secrets.map((s) => [s.name, s])) };
       } catch (error) {
         const message = error instanceof GitHubError ? error.message : "Không đọc được secret";
-        return { ...app, secrets: new Map(), error: message };
+        return { ...app, id: appId(app), secrets: new Map(), error: message };
       }
     }),
   );

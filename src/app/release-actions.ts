@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { isAuthorized } from "@/lib/auth";
-import { loadApps } from "@/lib/config";
+import { appId, loadApps } from "@/lib/config";
 import { getStore, GitHubError } from "@/lib/github";
 import { RELEASE_WORKFLOW } from "@/lib/releases";
 
@@ -23,7 +23,7 @@ export async function runReleaseAction(_prev: ReleaseState, formData: FormData):
   await requireAuth();
 
   const repo = String(formData.get("repo") ?? "");
-  const app = (await loadApps()).find((a) => a.repo === repo);
+  const app = (await loadApps()).find((a) => appId(a) === repo);
   if (!app) return { error: "App không có trong danh sách" };
 
   const ref = String(formData.get("ref") ?? "").trim();

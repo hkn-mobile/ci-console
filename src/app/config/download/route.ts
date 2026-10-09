@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { isAuthorized } from "@/lib/auth";
 import { loadAppConfig } from "@/lib/app-config-store";
-import { loadApps } from "@/lib/config";
+import { appId, loadApps } from "@/lib/config";
 import { GitHubError } from "@/lib/github";
 
 /**
@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
   if (!isAuthorized(request.headers.get("authorization"))) return new Response("Unauthorized", { status: 401 });
 
   const repo = request.nextUrl.searchParams.get("app") ?? "";
-  if (!(await loadApps()).some((a) => a.repo === repo)) return new Response("Not found", { status: 404 });
+  if (!(await loadApps()).some((a) => appId(a) === repo)) return new Response("Not found", { status: 404 });
 
   try {
     const entries = await loadAppConfig(repo);

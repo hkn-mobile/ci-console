@@ -33,7 +33,7 @@ export default async function ReleasesPage() {
 
       <div className="space-y-6">
         {apps.map((app) => (
-          <section key={app.repo} className={cardClass}>
+          <section key={app.id} className={cardClass}>
             <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-line px-5 py-4">
               <div>
                 <h2 className="font-semibold">{app.name}</h2>
@@ -43,7 +43,8 @@ export default async function ReleasesPage() {
                   rel="noreferrer"
                   className="font-mono text-[11px] text-fg-faint hover:text-accent"
                 >
-                  {app.repo} ↗
+                  {app.repo}
+                  {app.branch && ` · ${app.branch}`} ↗
                 </a>
               </div>
               {app.runs[0] && <RunBadge run={app.runs[0]} />}
@@ -54,7 +55,7 @@ export default async function ReleasesPage() {
             ) : (
               <div className="grid gap-6 p-5 lg:grid-cols-[1fr_380px]">
                 {app.hasWorkflow ? (
-                  <ReleaseForm repo={app.repo} defaultBranch={app.defaultBranch ?? "main"} />
+                  <ReleaseForm repo={app.id} defaultBranch={app.defaultBranch ?? "main"} />
                 ) : (
                   <p className="text-sm text-fg-muted">
                     Repo chưa có <code className="font-mono">.github/workflows/{RELEASE_WORKFLOW}</code> trên nhánh mặc định. Chạy script{" "}

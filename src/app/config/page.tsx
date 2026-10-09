@@ -2,7 +2,7 @@ import Link from "next/link";
 import { connection } from "next/server";
 import type { ConfigEntry } from "@/lib/app-config";
 import { loadAppConfig } from "@/lib/app-config-store";
-import { loadApps } from "@/lib/config";
+import { appId, loadApps } from "@/lib/config";
 import { GitHubError } from "@/lib/github";
 import { formatDate } from "@/lib/status";
 import { PageHeader } from "@/components/PageHeader";
@@ -13,13 +13,14 @@ export default async function ConfigPage({ searchParams }: { searchParams: Promi
   await connection();
   const apps = await loadApps();
   const { app: picked } = await searchParams;
-  const app = apps.find((a) => a.repo === picked) ?? apps[0];
+  const app = apps.find((a) => appId(a) === picked) ?? apps[0];
+  const id = app ? appId(app) : "";
 
   let entries: ConfigEntry[] = [];
   let error: string | undefined;
   if (app) {
     try {
-      entries = await loadAppConfig(app.repo);
+      entries = await loadAppConfig(id);
     } catch (e) {
       error = e instanceof GitHubError ? e.message : "Không đọc được config";
     }
@@ -40,11 +41,11 @@ export default async function ConfigPage({ searchParams }: { searchParams: Promi
         <nav aria-label="Chọn app" className="flex flex-wrap gap-2">
           {apps.map((a) => (
             <Link
-              key={a.repo}
-              href={`/config?app=${encodeURIComponent(a.repo)}`}
-              aria-current={a.repo === app?.repo ? "page" : undefined}
+              key={appId(a)}
+              href={`/config?app=${encodeURIComponent(appId(a))}`}
+              aria-current={appId(a) === id ? "page" : undefined}
               className={`rounded-lg border px-3 py-1.5 text-sm transition ${
-                a.repo === app?.repo ? "border-accent bg-accent-soft font-medium text-fg" : "border-line text-fg-muted hover:border-line-strong hover:text-fg"
+                appId(a) === id ? "border-accent bg-accent-soft font-medium text-fg" : "border-line text-fg-muted hover:border-line-strong hover:text-fg"
               }`}
             >
               {a.name}
@@ -69,9 +70,9 @@ export default async function ConfigPage({ searchParams }: { searchParams: Promi
               </div>
               {!error && (
                 <div className="flex items-start gap-2">
-                  <QuickImportButton repo={app.repo} />
+                  <QuickImportButton repo={id} />
                   {entries.length > 0 && (
-                    <a href={`/config/download?app=${encodeURIComponent(app.repo)}`} className={ghostButton} title="Dòng bí mật để trống, điền tay">
+                    <a href={`/config/download?app=${encodeURIComponent(id)}`} className={ghostButton} title="Dòng bí mật để trống, điền tay">
                       Tải app.json
                     </a>
                   )}
@@ -84,7 +85,7 @@ export default async function ConfigPage({ searchParams }: { searchParams: Promi
               ) : (
                 <ul>
                   {entries.map((entry) => (
-                    <EntryRow key={`${entry.secret}-${entry.key}`} repo={app.repo} entry={entry} updatedAt={formatDate(entry.updatedAt)} />
+                    <EntryRow key={`${entry.secret}-${entry.key}`} repo={id} entry={entry} updatedAt={formatDate(entry.updatedAt)} />
                   ))}
                 </ul>
               ))}
@@ -92,8 +93,8 @@ export default async function ConfigPage({ searchParams }: { searchParams: Promi
 
           {!error && (
             <>
-              <AddEntryForm repo={app.repo} />
-              <ImportForm repo={app.repo} />
+              <AddEntryForm repo={id} />
+              <ImportForm repo={id} />
             </>
           )}
         </>

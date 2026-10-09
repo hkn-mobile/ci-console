@@ -55,20 +55,21 @@ export default async function Home() {
           </thead>
           <tbody>
             {apps.map((app) => (
-              <tr key={app.repo} className="border-b border-line last:border-0 hover:bg-surface-2/40">
+              <tr key={app.id} className="border-b border-line last:border-0 hover:bg-surface-2/40">
                 <td className="sticky left-0 bg-surface px-4 py-3">
-                  <AppName repo={app.repo} name={app.name} />
+                  <AppName repo={app.id} name={app.name} />
                   <a
-                    href={`https://github.com/${app.repo}/settings/secrets/actions`}
+                    href={`https://github.com/${app.repo}/settings/${app.environment ? `environments` : "secrets/actions"}`}
                     target="_blank"
                     rel="noreferrer"
                     className="block font-mono text-[11px] text-fg-faint [overflow-wrap:anywhere] hover:text-accent"
                   >
-                    {app.repo} ↗
+                    {app.repo}
+                    {app.environment && ` · ${app.environment}`} ↗
                   </a>
                   {app.error && <div className="mt-1 max-w-56 text-xs text-bad">{app.error}</div>}
                   <div className="mt-1.5">
-                    <RemoveAppButton repo={app.repo} name={app.name} />
+                    <RemoveAppButton repo={app.id} name={app.name} />
                   </div>
                 </td>
                 {SECRETS.map((secret) => {

@@ -23,6 +23,8 @@ export type BuildMeta = {
   runNumber: number;
   runUrl: string;
   branch: string;
+  /** Branch the pull request merges into, for builds made by a PR. */
+  prBase?: string | null;
   commit: string;
   flavor: string;
   versionName: string;
@@ -112,6 +114,7 @@ async function doArchive(store: SecretStore, repo: string, kind: BuildKind, run:
       runNumber: run.number,
       runUrl: run.url,
       branch: String(info.ref ?? run.branch),
+      prBase: run.prBase,
       commit: String(info.commit ?? run.commit),
       flavor: String(info.flavor ?? guessed.flavor),
       versionName: String(info.versionName ?? ""),
@@ -165,8 +168,10 @@ export async function syncBuilds(apps: AppEntry[], kinds: BuildKind[] = ["releas
     return { pending: inFlight.size };
   }
 
+  // Apps sharing a repo share its runs; look at each repo once.
+  const repos = [...new Map(apps.map((a) => [a.repo, a])).values()];
   await Promise.all(
-    apps.flatMap((app) =>
+    repos.flatMap((app) =>
       kinds.map(async (kind) => {
         let runs: WorkflowRun[];
         try {

@@ -3,7 +3,7 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { findSecret, KEYSTORE_SECRETS, type SecretSpec } from "@/lib/catalog";
-import { loadApps } from "@/lib/config";
+import { appId, loadApps } from "@/lib/config";
 import { getStore, GitHubError } from "@/lib/github";
 import { isAuthorized } from "@/lib/auth";
 
@@ -19,7 +19,7 @@ async function requireAuth() {
 
 /** Keeps only repos listed in console.config.json; the form's list is never trusted. */
 async function selectedRepos(formData: FormData): Promise<string[]> {
-  const allowed = new Set((await loadApps()).map((a) => a.repo));
+  const allowed = new Set((await loadApps()).map(appId));
   const picked = formData.getAll("repos").map(String);
   return [...new Set(picked)].filter((repo) => allowed.has(repo));
 }

@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { isAuthorized } from "@/lib/auth";
 import { CONFIG_KEY_PATTERN, CONFIG_PREFIX, MAX_VARIABLE_BYTES } from "@/lib/app-config";
-import { loadApps } from "@/lib/config";
+import { appId, loadApps } from "@/lib/config";
 import { getStore, GitHubError, type SecretStore } from "@/lib/github";
 import type { ActionState, RepoResult } from "./actions";
 
@@ -20,7 +20,7 @@ async function requireAuth() {
 /** The repo posted by the form, only if it is one of the console's apps. */
 async function appRepo(formData: FormData): Promise<string> {
   const repo = String(formData.get("repo") ?? "");
-  if (!(await loadApps()).some((a) => a.repo === repo)) throw new InputError("App không có trong danh sách");
+  if (!(await loadApps()).some((a) => appId(a) === repo)) throw new InputError("App không có trong danh sách");
   return repo;
 }
 

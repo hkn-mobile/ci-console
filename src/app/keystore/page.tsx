@@ -17,7 +17,7 @@ export default async function KeystorePage() {
       .at(-1);
     return {
       name: app.name,
-      repo: app.repo,
+      repo: app.id,
       has: present.every(Boolean),
       updatedAt: latest ? formatDate(latest) : undefined,
       error: app.error ?? error,

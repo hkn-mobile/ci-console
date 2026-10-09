@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { connection } from "next/server";
 import QRCode from "qrcode";
 import { listBuilds, repoKey, syncBuilds, type BuildMeta } from "@/lib/archive";
-import { loadApps } from "@/lib/config";
+import { appId, loadApps, ownsBranch } from "@/lib/config";
 import { formatDate } from "@/lib/status";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { Badge } from "@/components/Badge";
@@ -17,8 +17,12 @@ export default async function BuildsPage({ searchParams }: { searchParams: Promi
   const { app: selected } = await searchParams;
   const apps = await loadApps();
   const { pending } = await syncBuilds(apps);
-  const names = new Map(apps.map((a) => [a.repo, a.name]));
-  const builds = (await listBuilds()).filter((b) => !selected || b.repo === selected);
+  const ownerOf = (b: BuildMeta) => apps.find((a) => a.repo === b.repo && ownsBranch(a, b.branch, b.prBase));
+  const builds = (await listBuilds()).filter((b) => {
+    if (!selected) return true;
+    const owner = ownerOf(b);
+    return owner ? appId(owner) === selected : b.repo === selected;
+  });
 
   const host = (await headers()).get("host") ?? "localhost:3100";
   const origin = `http://${host}`;
@@ -37,7 +41,7 @@ export default async function BuildsPage({ searchParams }: { searchParams: Promi
           Tất cả
         </FilterLink>
         {apps.map((app) => (
-          <FilterLink key={app.repo} href={`/builds?app=${encodeURIComponent(app.repo)}`} active={selected === app.repo}>
+          <FilterLink key={appId(app)} href={`/builds?app=${encodeURIComponent(appId(app))}`} active={selected === appId(app)}>
             {app.name}
           </FilterLink>
         ))}
@@ -50,7 +54,7 @@ export default async function BuildsPage({ searchParams }: { searchParams: Promi
         </div>
       ) : (
         <ul className={cardClass}>
-          {await Promise.all(builds.map(async (build) => <BuildRow key={`${build.repo}-${build.runId}`} build={build} appName={names.get(build.repo) ?? build.repo} origin={origin} />))}
+          {await Promise.all(builds.map(async (build) => <BuildRow key={`${build.repo}-${build.runId}`} build={build} appName={ownerOf(build)?.name ?? build.repo} origin={origin} />))}
         </ul>
       )}
     </div>

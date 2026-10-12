@@ -7,6 +7,7 @@ import { appId, loadApps, ownsBranch } from "@/lib/config";
 import { formatDate } from "@/lib/status";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import { Badge } from "@/components/Badge";
+import { CopyLinkButton } from "@/components/CopyLinkButton";
 import { PageHeader } from "@/components/PageHeader";
 import { cardClass, ghostButton } from "@/components/ui";
 
@@ -64,7 +65,8 @@ export default async function BuildsPage({ searchParams }: { searchParams: Promi
 async function BuildRow({ build, appName, origin }: { build: BuildMeta; appName: string; origin: string }) {
   const base = `/builds/file/${repoKey(build.repo)}/${build.runId}`;
   const apk = build.files.find((f) => f.name.toLowerCase().endsWith(".apk"));
-  const qr = apk ? await QRCode.toString(`${origin}${base}/${apk.name}`, { type: "svg", margin: 1, width: 168 }) : null;
+  const apkUrl = apk ? `${origin}${base}/${apk.name}` : null;
+  const qr = apkUrl ? await QRCode.toString(apkUrl, { type: "svg", margin: 1, width: 168 }) : null;
 
   return (
     <li className="grid gap-3 border-b border-line px-5 py-4 last:border-0 md:grid-cols-[1fr_auto] md:items-center">
@@ -104,6 +106,7 @@ async function BuildRow({ build, appName, origin }: { build: BuildMeta; appName:
             </div>
           </details>
         )}
+        {apkUrl && <CopyLinkButton url={apkUrl} />}
       </div>
     </li>
   );

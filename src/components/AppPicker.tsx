@@ -6,11 +6,13 @@ import { ghostButton } from "./ui";
 export type PickableApp = { name: string; repo: string; has: boolean; updatedAt?: string; error?: string };
 
 /** Checkbox list posted as `repos`; by default starts on the apps that still miss the secret. */
-export function AppPicker({ apps, initial = "missing" }: { apps: PickableApp[]; initial?: "missing" | "none" }) {
+export function AppPicker({ apps, initial = "missing" }: { apps: PickableApp[]; initial?: "missing" | "all" | "none" }) {
   const usable = apps.filter((a) => !a.error);
-  const [picked, setPicked] = useState<Set<string>>(
-    () => new Set(initial === "none" ? [] : usable.filter((a) => !a.has).map((a) => a.repo)),
-  );
+  const [picked, setPicked] = useState<Set<string>>(() => {
+    if (initial === "none") return new Set();
+    if (initial === "all") return new Set(usable.map((a) => a.repo));
+    return new Set(usable.filter((a) => !a.has).map((a) => a.repo));
+  });
 
   const toggle = (repo: string) =>
     setPicked((current) => {

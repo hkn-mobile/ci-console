@@ -6,6 +6,7 @@ import { findSecret, KEYSTORE_SECRETS, type SecretSpec } from "@/lib/catalog";
 import { appId, loadApps } from "@/lib/config";
 import { getStore, GitHubError } from "@/lib/github";
 import { isAuthorized } from "@/lib/auth";
+import { sshKeyFingerprint } from "@/lib/sshkey";
 
 export type RepoResult = { repo: string; name: string; ok: boolean; message: string };
 export type ActionState = { error?: string; results?: RepoResult[] };
@@ -33,15 +34,15 @@ async function readFile(formData: FormData, field: string): Promise<Buffer | nul
 
 class InputError extends Error {}
 
-/** Builds the value to store from whichever input the secret's kind uses. */
-async function valueFor(spec: SecretSpec, formData: FormData): Promise<string> {
+/** The value to store, plus a note shown with each saved app (an SSH key's fingerprint). */
+async function valueFor(spec: SecretSpec, formData: FormData): Promise<{ value: string; note?: string }> {
   const text = String(formData.get("value") ?? "");
 
   switch (spec.kind) {
     case "file-base64": {
       const file = await readFile(formData, "file");
       if (!file) throw new InputError("Chọn file keystore");
-      return file.toString("base64");
+      return { value: file.toString("base64") };
     }
     case "json": {
       const file = await readFile(formData, "file");
@@ -53,17 +54,27 @@ async function valueFor(spec: SecretSpec, formData: FormData): Promise<string> {
         if (error instanceof InputError) throw error;
         throw new InputError("Nội dung không phải JSON hợp lệ");
       }
-      return raw.trim();
+      return { value: raw.trim() };
+    }
+    case "ssh-private-key": {
+      const file = await readFile(formData, "file");
+      const raw = (file ? file.toString("utf8") : text).replace(/\r\n/g, "\n").trim();
+      if (!raw) throw new InputError("Chưa nhập giá trị");
+      try {
+        return { value: `${raw}\n`, note: sshKeyFingerprint(raw) };
+      } catch (error) {
+        throw new InputError(error instanceof Error ? error.message : "Key không hợp lệ");
+      }
     }
     case "multiline": {
       const file = await readFile(formData, "file");
       const raw = (file ? file.toString("utf8") : text).replace(/\r\n/g, "\n").trim();
       if (!raw) throw new InputError("Chưa nhập giá trị");
-      return `${raw}\n`;
+      return { value: `${raw}\n` };
     }
     default:
       if (!text) throw new InputError("Chưa nhập giá trị");
-      return text;
+      return { value: text };
   }
 }
 
@@ -97,8 +108,10 @@ export async function setSecretAction(_prev: ActionState, formData: FormData): P
   if (repos.length === 0) return { error: "Chọn ít nhất một app" };
 
   try {
-    const value = await valueFor(spec, formData);
-    const results = await writeAll(repos, [[spec.name, value]]);
+    const { value, note } = await valueFor(spec, formData);
+    const results = (await writeAll(repos, [[spec.name, value]])).map((result) =>
+      result.ok && note ? { ...result, message: `${result.message} · ${note}` } : result,
+    );
     revalidatePath("/");
     return { results };
   } catch (error) {

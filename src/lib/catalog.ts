@@ -1,5 +1,5 @@
 /** How a secret's value is entered on the form. */
-export type SecretKind = "text" | "password" | "multiline" | "file-base64" | "json";
+export type SecretKind = "text" | "password" | "multiline" | "ssh-private-key" | "file-base64" | "json";
 
 export type SecretSpec = {
   name: string;
@@ -15,9 +15,9 @@ export const SECRETS: SecretSpec[] = [
   {
     name: "PUB_GIT_SSH_KEY",
     label: "SSH key cho package git private",
-    kind: "multiline",
+    kind: "ssh-private-key",
     shared: true,
-    help: "Khoá private của deploy key (vd. cho net_kit). Dán cả dòng BEGIN và END.",
+    help: "Khoá private của deploy key (vd. cho net_kit). Dán cả dòng BEGIN và END; web kiểm tra key và hiện fingerprint để so với Deploy keys trên GitHub.",
   },
   {
     name: "ANDROID_KEYSTORE_BASE64",

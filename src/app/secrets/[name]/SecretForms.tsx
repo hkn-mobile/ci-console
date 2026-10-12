@@ -19,8 +19,12 @@ export function SetSecretForm({ spec, apps }: { spec: SecretSpec; apps: Pickable
       <FormSection step={1} title="Giá trị" hint="Được mã hoá và gửi thẳng lên GitHub; web không lưu lại.">
         <ValueInput spec={spec} />
       </FormSection>
-      <FormSection step={2} title="Chọn app" hint="Mặc định chọn các app đang thiếu secret này.">
-        <AppPicker apps={apps} />
+      <FormSection
+        step={2}
+        title="Chọn app"
+        hint={spec.shared ? "Secret dùng chung: mặc định chọn mọi app, kể cả app đã có (ghi đè)." : "Mặc định chọn các app đang thiếu secret này."}
+      >
+        <AppPicker apps={apps} initial={spec.shared ? "all" : "missing"} />
       </FormSection>
       <div className="flex flex-col gap-3 p-5">
         <div>
@@ -46,6 +50,7 @@ function ValueInput({ spec }: { spec: SecretSpec }) {
       );
     case "json":
     case "multiline":
+    case "ssh-private-key":
       return (
         <>
           <label className="block space-y-1.5">
